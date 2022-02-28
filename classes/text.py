@@ -52,7 +52,7 @@ class Text:
             language='danish',
             file_path_input='{}/input/stopwords.txt'.format(os.path.dirname(__file__)),
     ):
-        print(os.path.dirname(__file__))
+        # print(os.path.dirname(__file__))
 
         """:return array of stopwords in :arg language"""
         if os.path.isfile(file_path_input):

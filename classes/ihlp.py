@@ -1,10 +1,12 @@
 import datetime
 import os
 import warnings
+from ast import literal_eval
 
 import numpy as np
 import pandas as pd
 
+from assort.add_solvers import setSolver
 from classes.objs.Item import Item
 from classes.objs.Request import Request
 from classes.objs.Relation import Relation
@@ -33,7 +35,9 @@ class IHLP:
         str_to = str(datetime.datetime(2016, 1, 31))
 
         if os.path.isfile(file_path_input) and use_cache:
-            return pd.read_excel(file_path_input)
+            data = pd.read_excel(file_path_input)
+            data['solvers'] = data.apply(lambda x: literal_eval(x['solvers']), axis=1)
+            return data
 
         def get_date(x, index):
             tmp = x[index]
@@ -54,22 +58,9 @@ class IHLP:
         else:
             sql_requests = Request.get_between_sql(str_from, str_to)
 
-        sql_relations = Relation.get_relations_by_type('ItemRole')
-        sql_items = Item.get_items()
+        print('[IHLP] Data is loaded.')
 
-        print('Data is loaded.')
-
-        df_items = pd.DataFrame(sql_items, columns=Item().fillables)
-        df_requests = pd.DataFrame(sql_requests, columns=Request().fillables)
-        df_relations = pd.DataFrame(sql_relations, columns=Relation().fillables)
-
-        df_items = df_items.rename(columns={'id': 'item.id', 'description': 'item.description', 'subject': 'item.subject'})
-        df_requests = df_requests.rename(columns={'id': 'request.id', 'description': 'request.description', 'subject': 'request.subject'})
-
-        data = pd.merge(df_requests, df_relations, left_on='request.id', right_on='leftId')
-        data = pd.merge(data, df_items, left_on='rightId', right_on='item.id')
-
-        print('Merge is done.')
+        data = pd.DataFrame(sql_requests, columns=Request().fillables)
 
         data['dateStart'] = data.apply(lambda x: get_date(x, index='solutionDate'), axis=1)
         data = data[~data.dateStart.isnull()]
@@ -77,33 +68,41 @@ class IHLP:
         data['dateEnd'] = data.apply(lambda x: get_date(x, index='receivedDate'), axis=1)
         data = data[~data.dateEnd.isnull()]
 
-        data['processSolver'] = data['username']
-
-        data['processTime'] = data.apply(lambda x: get_process_time(x), axis=1)
-        data = data[data.processTime > 0]
+        data['time'] = data.apply(lambda x: get_process_time(x), axis=1)
+        data = data[data.time > 0]
 
         text = Text()
 
-        data['processText'] = data.apply(lambda x: text.get_process_text(
-            "{} {}".format(x['request.subject'], x['request.description'])
+        data['text'] = data.apply(lambda x: text.get_process_text(
+            "{}: {}".format(x['subject'], x['description'])
         ), axis=1)
 
-        data = data[['processTime', 'processText', 'processSolver']]
+        data = data.fillna('')
+        data = data[data['text'].str.split().str.len().lt(300)]
+
+        print('[IHLP] Text processed.')
+
+        data = data[data['time'] >= 0]
+
+        _min = data.time.min()
+        _max = data.time.max()
+
+        categories = 6
+
+        data['timeDense'] = data.apply(lambda x: (x['time'] - _min) / (_max - _min), axis=1)
+        data['timeCategory'] = pd.qcut(data['time'], q=[i / categories for i in range(categories + 1)], labels=[int(i) for i in range(categories)])
+
+        print('[IHLP] Time processed.')
+
+        data = setSolver(data)
+
+        print('[IHLP] Solvers processed.')
+
+        data = data[['id', 'text', 'solvers', 'time', 'timeDense', 'timeCategory']]
         data.to_excel(file_path_input, index=False)
 
         return self.ready_data()
 
-    def get(self, categories=2, use_cache=True, use_all=False):
-
+    def get(self, use_cache=True, use_all=False):
         data = self.ready_data(use_cache=use_cache, use_all=use_all)
-        data = data.fillna('')
-        data = data[data['processText'].str.split().str.len().lt(300)]
-        data = data[data['processTime'] >= 0]
-
-        _min = data.processTime.min()
-        _max = data.processTime.max()
-
-        data['processTimeDense'] = data.apply(lambda x: (x['processTime'] - _min) / (_max - _min), axis=1)
-        data['processCategory'] = pd.qcut(data['processTime'], q=[i/categories for i in range(categories + 1)], labels=[int(i) for i in range(categories)])
-
-        return data[['processText', 'processTimeDense', 'processCategory']]
+        return data[['id', 'text', 'solvers', 'timeDense', 'timeCategory']]

@@ -76,7 +76,7 @@ class Request:
         sql_test = ''
         if test is not False:
             str_from = str(datetime.datetime(2016, 3, 15))
-            sql_test = " WHERE `receivedDate` >= '{}' LIMIT 10".format(str_from)
+            sql_test = " WHERE `receivedDate` >= '{}' LIMIT {}".format(str_from, test)
         query = "SELECT {} FROM `request`{}".format(
             ', '.join(["`{}`".format(e) for e in Request._fillables]), sql_test)
         result = sql.SQL().all(query, [])

@@ -48,21 +48,21 @@ def define_model(_kernel_size=3, _activation='relu', _input_dim=None, _output_di
 
     inp = Input(shape=(_max_length,))
     x = Embedding(input_dim=_input_dim, output_dim=_output_dim, input_length=_max_length)(inp)
-    x = SpatialDropout1D(0.2)(x)
+    x = SpatialDropout1D(0.4)(x)
 
-    x = TCN(128, dilations=[1, 2, 4], return_sequences=True, activation=_activation, name='tcn1')(x)
-    x = TCN(64, dilations=[1, 2, 4], return_sequences=True, activation=_activation, name='tcn2')(x)
+    x = TCN(256, dilations=[1, 2, 4], return_sequences=True, activation=_activation, name='tcn1')(x)
+    x = TCN(128, dilations=[1, 2, 4], return_sequences=True, activation=_activation, name='tcn2')(x)
 
     avg_pool = GlobalAveragePooling1D()(x)
     max_pool = GlobalMaxPooling1D()(x)
 
     conc = concatenate([avg_pool, max_pool])
-    conc = Dense(16, activation="relu")(conc)
+    conc = Dense(64, activation="relu")(conc)
     conc = Dropout(0.2)(conc)
-    outp = Dense(_categories, activation='softmax')(conc)
+    outp = Dense(_categories)(conc)
 
     _model = Model(inputs=inp, outputs=outp)
-    _model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    _model.compile(loss='mae', optimizer='adam', metrics=tf.keras.metrics.MeanAbsoluteError())
 
     return _model
 
@@ -70,6 +70,8 @@ def define_model(_kernel_size=3, _activation='relu', _input_dim=None, _output_di
 def runCategory(use_cache=True, use_all=False):
 
     data = IHLP().get(use_cache=use_cache, use_all=use_all)
+    data = data.fillna('')
+
     sentences, labels = list(data.text), list(data.solvers)
 
     trunc_type = 'post'
@@ -93,7 +95,7 @@ def runCategory(use_cache=True, use_all=False):
 
     # print('Into a padded sequence:', training_padded[0])
 
-    callbacks = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', min_delta=0,
+    callbacks = tf.keras.callbacks.EarlyStopping(monitor='mean_absolute_error', min_delta=0,
                                                  patience=7, verbose=2,
                                                  mode='auto', restore_best_weights=True)
 
@@ -166,8 +168,7 @@ def runCategory(use_cache=True, use_all=False):
                     print('Training ...')
 
                     # Train the model
-                    model.fit(Xtrain, train_y, batch_size=10, epochs=10, verbose=1,
-                              callbacks=[callbacks], validation_data=(Xtest, test_y))
+                    model.fit(Xtrain, train_y, batch_size=100, epochs=10, callbacks=[callbacks], validation_data=(Xtest, test_y))
 
                     # evaluate the model
                     loss, acc = model.evaluate(Xtest, test_y, verbose=0)

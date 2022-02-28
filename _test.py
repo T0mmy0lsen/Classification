@@ -46,36 +46,46 @@ def findSolvers(m):
     df_requests = Request.get_sql(10)
     df_relations = Relation.get_relations_by_type('ItemRole')
 
+    # The initial solvers are set
     df_requests['solvers'] = df_requests.apply(lambda x: determineSolvers(x, df_relations, meta=m), axis=1)
     df_requests = df_requests[len(df_requests.solvers) > 0]
 
-    # No need to pad them at this point. We wait with the vector until later.
-    # df_requests['solvers'] = df_requests.apply(lambda x: padSolvers(x, meta=m), axis=1)
+    # PAdded solvers are used whn the label is a vector, i.e. when we care about the order of solvers.
+    df_requests['solvers'] = df_requests.apply(lambda x: padSolvers(x, meta=m), axis=1)
 
-    # The label will be of type [0, 0, 0, 1] which tells us that key = 3 in dict is the actual solver.
-    # If label = [1, 0, 0, 1], the both key 0 and 3 solved the Request.
     m.buildDict(df_requests)
 
-    df_requests['solvers'] = df_requests.apply(lambda x: buildLabel(x, meta=m), axis=1)
+    # Given dimension = 1; the label will be of type [0, 0, 0, 1] which tells us that key = 3 in dict is the actual solver.
+    # If label = [1, 0, 0, 1], the both key 0 and 3 solved the Request.
+    # Given dimension = 2; the label will be of type [[1, 0, 1], [0, 1, 0], [0, 0, 0]] tells us we have 3 solvers in the dict.
+    # The request was solved by going from solver = 0, then solver = 1, then back to solver = 0.
+    df_requests['solvers'] = df_requests.apply(lambda x: buildLabel(x, meta=m, dimensions=1), axis=1)
 
     m.print()
     print(df_requests)
 
 
-def buildLabel(x, meta):
+def buildLabel(x, meta, dimensions=1):
 
-    label = []
-    for idx, solver in enumerate(meta.solvers):
-        if meta.solvers_dict[idx] in x.solvers:
-            label.append(1)
-            meta.solvers_dict_count[idx] = meta.solvers_dict_count[idx] + 1
-        else:
-            label.append(0)
-    return label
+    # If we use a single dimension we don't care about the order in which the solvers solved the Request.
+    if dimensions == 1:
+        label = []
+        for idx, solver in enumerate(meta.solvers):
+            if meta.solvers_dict[idx] in x.solvers:
+                label.append(1)
+                meta.solvers_dict_count[idx] = meta.solvers_dict_count[idx] + 1
+            else:
+                label.append(0)
+        return label
+
+    if dimensions == 2:
+        print('Not implemented.')
 
 
 def padSolvers(x, meta):
 
+    # Pad solvers s.t. all solver vectors are same length.
+    # Padded solvers has no effect when the label has one dimension.
     tmp = []
     tmp = tmp + [0] * (meta.solvers_max_len - len(x.solvers))
     tmp = tmp + x.solvers
@@ -87,9 +97,10 @@ def determineSolvers(x, relations, meta):
     tmp = relations[relations.leftId == x['id']]
     tmp = tmp[tmp.rightType == 'ItemRole']
 
+    # If there is a solver there must be more ItemRole than just the requester and the dispatcher.
     if len(tmp) > 2:
 
-        # Sort by id since we expect the ID's sequence to match the ordering of when the ItemRole was added to the Request.
+        # Sort by id since we expect the id's sequence to match the ordering of when the ItemRole was added to the Request.
         # We say that id = 100 was assign a request after id = 99, etc.
         tmp.sort_values(by=['id'], inplace=True)
 
